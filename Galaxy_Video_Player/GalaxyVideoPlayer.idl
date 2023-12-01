@@ -1,0 +1,29 @@
+// GalaxyVideoPlayer.idl : type library source for Galaxy_Video_Player.exe
+
+// This file will be processed by the MIDL compiler to produce the
+// type library (GalaxyVideoPlayer.tlb).
+
+[ uuid(c0bf4a66-90b7-4cc0-ad39-7cdfb73ae2d7), version(1.0) ]
+library Galaxy_Video_Player
+{
+	importlib("stdole32.tlb");
+	importlib("stdole2.tlb");
+
+	//  Primary dispatch interface for CGalaxyVideoPlayerDoc
+
+	[ uuid(63c0bff3-15ae-4865-b2ed-2f2f295d0aeb) ]
+	dispinterface IGalaxy_Video_Player
+	{
+		properties:
+
+		methods:
+	};
+
+	//  Class information for CGalaxyVideoPlayerDoc
+
+	[ uuid(4da58d18-ace5-4c36-9c89-62745167f641) ]
+	coclass Galaxy_Video_Player
+	{
+		[default] dispinterface IGalaxy_Video_Player;
+	};
+};

@@ -1,0 +1,17 @@
+REGEDIT
+; This .REG file may be used by your SETUP program.
+;   If a SETUP program is not available, the entries below will be
+;   registered in your InitInstance automatically with a call to
+;   CWinApp::RegisterShellFileTypes and COleObjectFactory::UpdateRegistryAll.
+
+
+HKEY_CLASSES_ROOT\Galaxy_Video_Player.Application = Galaxy_Video_Player Application
+
+
+HKEY_CLASSES_ROOT\Galaxy_Video_Player.Application\CLSID = {4da58d18-ace5-4c36-9c89-62745167f641}
+
+HKEY_CLASSES_ROOT\CLSID\{4da58d18-ace5-4c36-9c89-62745167f641} = Galaxy_Video_Player Application
+HKEY_CLASSES_ROOT\CLSID\{4da58d18-ace5-4c36-9c89-62745167f641}\ProgId = Galaxy_Video_Player.Application
+
+
+HKEY_CLASSES_ROOT\CLSID\{4da58d18-ace5-4c36-9c89-62745167f641}\LocalServer32 = Galaxy_Video_Player.EXE
