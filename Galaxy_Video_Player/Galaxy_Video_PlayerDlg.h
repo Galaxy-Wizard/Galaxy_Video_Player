@@ -35,10 +35,10 @@ protected:
 	CGalaxyVideoPlayerDlgAutoProxy* m_pAutoProxy;
 	HICON m_hIcon;
 
-	IDirect3D9* pD3D;
-	IDirect3DDevice9* pDevice;
-
-	IDirect3DTexture9* texture;
+	ID3D11Device* pDevice;
+	ID3D11DeviceContext* pDeviceContext;
+	IDXGISwapChain* pSwapChain;
+	ID3D11RenderTargetView* pRenderTargetView;
 
 	IDirectSound8* pDirectSound;
 
@@ -54,8 +54,6 @@ protected:
 
 	void Render();
 
-	void BlitD3D(IDirect3DTexture9* texture, RECT* rDest, D3DCOLOR vertexColour, float rotate);
-	IDirect3DTexture9* LoadTexture();
 
 	int vstrm_idx;
 	AVStream* vstrm;
@@ -84,4 +82,7 @@ public:
 	CEdit file_path;
 	CStatic video_window;
 	afx_msg void OnTimer(UINT_PTR nIDEvent);
+	CStatic application_status;
+
+	void set_application_status(CString message);
 };

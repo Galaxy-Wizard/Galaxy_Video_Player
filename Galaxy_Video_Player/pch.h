@@ -10,9 +10,13 @@
 // add headers that you want to pre-compile here
 #include "framework.h"
 
-#include <d3d9.h>
+#include <d3d11.h>
 
-#pragma comment(lib, "d3d9.lib")
+#pragma comment(lib, "d3d11.lib")
+
+//#include <d3d9.h>
+
+//#pragma comment(lib, "d3d9.lib")
 
 #include <mmreg.h>
 #include <dsound.h>

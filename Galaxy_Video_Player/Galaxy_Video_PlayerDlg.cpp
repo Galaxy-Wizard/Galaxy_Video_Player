@@ -7,11 +7,11 @@
 
 extern "C"
 {
-	#include "libavformat/avformat.h"
-	#include "libavcodec/avcodec.h"
-	#include "libswscale/swscale.h"
-	#include "libavutil/imgutils.h"
-	#include "libavutil/avutil.h"
+#include "libavformat/avformat.h"
+#include "libavcodec/avcodec.h"
+#include "libswscale/swscale.h"
+#include "libavutil/imgutils.h"
+#include "libavutil/avutil.h"
 }
 
 #include "Galaxy_Video_Player.h"
@@ -23,19 +23,8 @@ extern "C"
 #pragma comment(lib, "avutil.lib")
 #pragma comment(lib, "avcodec.lib")
 
-static inline int
-clamp(int x)
-{
-	if (x > 255) return 255;
-	if (x < 0)   return 0;
-	return x;
-}
 
-#define YUV_TO_R(C, D, E) clamp((298 * (C) + 409 * (E) + 128) >> 8)
-#define YUV_TO_G(C, D, E) clamp((298 * (C) - 100 * (D) - 208 * (E) + 128) >> 8)
-#define YUV_TO_B(C, D, E) clamp((298 * (C) + 516 * (D) + 128) >> 8)
-
-#define RGB32(r, g, b) static_cast<uint32_t>((((static_cast<uint32_t>(r) << 8) | g) << 8) | b)
+FLOAT color[] = { 0.25, 0.25, 0.25, 0.0 };
 
 
 #ifdef _DEBUG
@@ -43,12 +32,12 @@ clamp(int x)
 #endif
 
 
-enum AVPixelFormat get_format_argb(struct AVCodecContext* s, const enum AVPixelFormat* fmt)
+enum AVPixelFormat get_pixel_format(struct AVCodecContext* s, const enum AVPixelFormat* fmt)
 {
 	while (*fmt != AV_PIX_FMT_NONE)
 	{
-		if (*fmt == AV_PIX_FMT_YUVJ420P)
-		{			
+		if (*fmt == AV_PIX_FMT_D3D11)
+		{
 			return *fmt;
 		}
 		++fmt;
@@ -57,8 +46,8 @@ enum AVPixelFormat get_format_argb(struct AVCodecContext* s, const enum AVPixelF
 	return AV_PIX_FMT_NONE;
 }
 
-#define PLAY_TIMER_EVENT 2004
-#define DECODE_TIMER_EVENT 2005
+#define PLAY_TIMER_EVENT 1981
+#define DECODE_TIMER_EVENT 1987
 
 // CGalaxyVideoPlayerDlg dialog
 
@@ -72,10 +61,10 @@ CGalaxyVideoPlayerDlg::CGalaxyVideoPlayerDlg(CWnd* pParent /*=nullptr*/)
 	m_hIcon = AfxGetApp()->LoadIcon(IDR_MAINFRAME);
 	m_pAutoProxy = nullptr;
 
-	pD3D = nullptr;
 	pDevice = nullptr;
-
-	texture = nullptr;
+	pDeviceContext = nullptr;
+	pSwapChain = nullptr;
+	pRenderTargetView = nullptr;
 
 	pDirectSound = nullptr;
 
@@ -102,6 +91,7 @@ void CGalaxyVideoPlayerDlg::DoDataExchange(CDataExchange* pDX)
 	CDialogEx::DoDataExchange(pDX);
 	DDX_Control(pDX, IDC_EDIT1, file_path);
 	DDX_Control(pDX, IDC_STATIC_PICTURE, video_window);
+	DDX_Control(pDX, IDC_STATIC_STATUS, application_status);
 }
 
 BEGIN_MESSAGE_MAP(CGalaxyVideoPlayerDlg, CDialogEx)
@@ -129,31 +119,80 @@ BOOL CGalaxyVideoPlayerDlg::OnInitDialog()
 	SetIcon(m_hIcon, TRUE);			// Set big icon
 	SetIcon(m_hIcon, FALSE);		// Set small icon
 
-	pD3D = Direct3DCreate9(D3D_SDK_VERSION);
 
-	if (pD3D == nullptr)
+	// initialize DirectX
 	{
-		return FALSE;
+		DXGI_SWAP_CHAIN_DESC swapChainDesc = {};
+		swapChainDesc.Windowed = TRUE;
+		swapChainDesc.OutputWindow = video_window.m_hWnd;
+		swapChainDesc.BufferCount = 2;
+		swapChainDesc.BufferDesc.Width = 0;
+		swapChainDesc.BufferDesc.Height = 0;
+		swapChainDesc.BufferDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+		swapChainDesc.BufferDesc.RefreshRate.Numerator = 60;
+		swapChainDesc.BufferDesc.RefreshRate.Denominator = 1;
+		swapChainDesc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
+		swapChainDesc.SampleDesc.Count = 1;
+		swapChainDesc.SampleDesc.Quality = 0;
+		swapChainDesc.SwapEffect = DXGI_SWAP_EFFECT_DISCARD;
+		swapChainDesc.Flags = DXGI_SWAP_CHAIN_FLAG_ALLOW_MODE_SWITCH;
+
+		D3D_FEATURE_LEVEL featureLevel;
+		const D3D_FEATURE_LEVEL featureLevelArray[] = { D3D_FEATURE_LEVEL_11_0, D3D_FEATURE_LEVEL_10_0, D3D_FEATURE_LEVEL_9_1, };
+		if (
+			SUCCEEDED(
+				D3D11CreateDeviceAndSwapChain(NULL, D3D_DRIVER_TYPE_HARDWARE, NULL, D3D11_CREATE_DEVICE_DEBUG, featureLevelArray, 3, D3D11_SDK_VERSION, &swapChainDesc, &pSwapChain, &pDevice, &featureLevel, &pDeviceContext)
+			)
+			)
+		{
+
+			ID3D11Texture2D* pBackBuffer;
+			if (pSwapChain != nullptr)
+			{
+				if (
+					SUCCEEDED(
+						pSwapChain->GetBuffer(0, IID_PPV_ARGS(&pBackBuffer))
+					)
+					)
+				{
+					if (pDevice != nullptr)
+					{
+						if (
+							SUCCEEDED(
+								pDevice->CreateRenderTargetView(pBackBuffer, NULL, &pRenderTargetView)
+							)
+							)
+						{
+							if (pBackBuffer != nullptr)
+							{
+								pBackBuffer->Release();
+							}
+						}
+					}
+				}
+			}
+
+
+			RECT rc;
+			video_window.GetWindowRect(&rc);
+
+			D3D11_VIEWPORT viewport;
+			viewport.MinDepth = 0;
+			viewport.MaxDepth = 1;
+			viewport.TopLeftX = 0;
+			viewport.TopLeftY = 0;
+			viewport.Width = FLOAT(rc.right - rc.left);
+			viewport.Height = FLOAT(rc.bottom - rc.top);
+			pDeviceContext->RSSetViewports(1u, &viewport);
+		}
 	}
 
-	D3DPRESENT_PARAMETERS params;
-	ZeroMemory(&params, sizeof(params));
-	params.Windowed = TRUE;
-	params.SwapEffect = D3DSWAPEFFECT_DISCARD;
-	params.BackBufferFormat = D3DFMT_A8R8G8B8;
-	params.Flags = D3DPRESENTFLAG_LOCKABLE_BACKBUFFER;
-	params.BackBufferCount = 0;
+	ShowWindow(SW_SHOWNORMAL);
+	UpdateWindow();
 
-	HRESULT hr = pD3D->CreateDevice(
-		D3DADAPTER_DEFAULT, D3DDEVTYPE_HAL, video_window.m_hWnd,
-		D3DCREATE_HARDWARE_VERTEXPROCESSING,
-		&params, &pDevice);
-	if (FAILED(hr))
-	{
-		pD3D->Release();
-		pD3D = nullptr;
-		return FALSE;
-	}
+	// draw the initial gray window
+	pDeviceContext->ClearRenderTargetView(pRenderTargetView, color);
+	pSwapChain->Present(1, 0);
 
 	DirectSoundCreate8(nullptr, &pDirectSound, nullptr);
 	if (pDirectSound != nullptr)
@@ -277,7 +316,7 @@ void CGalaxyVideoPlayerDlg::OnBnClickedButton2()
 	format_context = avformat_alloc_context();
 	if (format_context == nullptr)
 	{
-		av_log(NULL, AV_LOG_ERROR, "Could not allocate memory for the input format context.\n");
+		set_application_status(L"Could not allocate memory for the input format context.\n");
 
 		return;
 	}
@@ -287,14 +326,14 @@ void CGalaxyVideoPlayerDlg::OnBnClickedButton2()
 	response = avformat_open_input(&format_context, input_file_a, NULL, NULL);
 	if (response < 0)
 	{
-		av_log(NULL, AV_LOG_ERROR, "Could not open the input file: %s.\n", input_file_a);
+		set_application_status(L"Could not open the input file.\n");
 		return;
 	}
 
 	// Retrieve stream information
 	response = avformat_find_stream_info(format_context, NULL);
 	if (response < 0) {
-		av_log(NULL, AV_LOG_ERROR, "Unable to find stream info\n");
+		set_application_status(L"Unable to find stream info\n");
 		return;
 	}
 
@@ -302,7 +341,7 @@ void CGalaxyVideoPlayerDlg::OnBnClickedButton2()
 	const AVCodec* vcodec = nullptr;
 	response = av_find_best_stream(format_context, AVMEDIA_TYPE_VIDEO, -1, -1, &vcodec, 0);
 	if (response < 0) {
-		av_log(NULL, AV_LOG_ERROR, "Failed to find best stream.\n");
+		set_application_status(L"Failed to find best stream.\n");
 		return;
 	}
 	vstrm_idx = response;
@@ -313,19 +352,19 @@ void CGalaxyVideoPlayerDlg::OnBnClickedButton2()
 	if (decoder != nullptr)
 	{
 		if (avcodec_parameters_to_context(decoder, vstrm->codecpar) < 0) {
-			av_log(NULL, AV_LOG_ERROR, "Can not copy input video codec parameters to video decoder context\n");
+			set_application_status(L"Can not copy input video codec parameters to video decoder context\n");
 			return;
 		}
 
 		response = avcodec_open2(decoder, vcodec, nullptr);
 		if (response < 0) {
-			av_log(NULL, AV_LOG_ERROR, "Failed to open codec.\n");
+			set_application_status(L"Failed to open codec.\n");
 			return;
 		}
 
 		frames_rate = decoder->framerate.num / decoder->framerate.den;
 
-		decoder->get_format = get_format_argb;
+		decoder->get_format = get_pixel_format;
 	}
 
 	KillTimer(PLAY_TIMER_EVENT);
@@ -371,18 +410,30 @@ void CGalaxyVideoPlayerDlg::clear_direct_sound()
 	}
 }
 
-void CGalaxyVideoPlayerDlg:: clear_direct_3d()
+void CGalaxyVideoPlayerDlg::clear_direct_3d()
 {
+	if (pRenderTargetView != nullptr)
+	{
+		pRenderTargetView->Release();
+		pRenderTargetView = nullptr;
+	}
+
+	if (pSwapChain != nullptr)
+	{
+		pSwapChain->Release();
+		pSwapChain = nullptr;
+	}
+
+	if (pDeviceContext != nullptr)
+	{
+		pDeviceContext->Release();
+		pDeviceContext = nullptr;
+	}
+
 	if (pDevice != nullptr)
 	{
 		pDevice->Release();
 		pDevice = nullptr;
-	}
-
-	if (pD3D != nullptr)
-	{
-		pD3D->Release();
-		pD3D = nullptr;
 	}
 }
 
@@ -412,262 +463,70 @@ void CGalaxyVideoPlayerDlg::Render()
 
 	if (pDevice)
 	{
-		// Очистим область вывода темно-синим цветом
-		pDevice->Clear(0, NULL,
-			D3DCLEAR_TARGET,
-			D3DCOLOR_XRGB(127, 127, 127), 0.0f, 0);
-
-		// Рисуем сцену
-		if (SUCCEEDED(pDevice->BeginScene()))
 		{
-			RECT rectangle;
-
-			video_window.GetClientRect(&rectangle);
-
-			if (texture != nullptr)
+			if (pDeviceContext != nullptr && pSwapChain != nullptr)
 			{
-				texture->Release();
-				texture = nullptr;
-			}
+				// fill with random color every time the timer fires
+				//color[0] = FLOAT((rand() % 100) / 100.0);
+				//color[1] = FLOAT((rand() % 100) / 100.0);
+				//color[2] = FLOAT((rand() % 100) / 100.0);
+				//color[3] = 0.0;
+				pDeviceContext->ClearRenderTargetView(pRenderTargetView, color);
 
-			texture = LoadTexture();
-
-			if (texture != nullptr)
-			{
-				BlitD3D(texture, &rectangle, D3DCOLOR_ARGB(1, 1, 1, 1), 0);
-			}
-
-			pDevice->EndScene();
-		}
-
-		// Выводим содержимое вторичного буфера
-		pDevice->Present(NULL, NULL, NULL, NULL);
-	}
-}
-
-//Draw a textured quad on the back-buffer
-void CGalaxyVideoPlayerDlg::BlitD3D(IDirect3DTexture9* texture, RECT* rDest, D3DCOLOR vertexColour, float rotate)
-{
-	const DWORD D3DFVF_TLVERTEX = D3DFVF_XYZRHW | D3DFVF_DIFFUSE | D3DFVF_TEX1;
-
-	struct TLVERTEX
-	{
-		float x, y, z, rhw;
-		D3DCOLOR color;
-		float u;
-		float v;
-	};
-
-	IDirect3DVertexBuffer9* vertexBuffer;
-
-	if (pDevice != nullptr)
-	{
-		// Set vertex shader.
-		pDevice->SetVertexShader(NULL);
-		pDevice->SetFVF(D3DFVF_TLVERTEX);
-
-		// Create vertex buffer.
-		pDevice->CreateVertexBuffer(sizeof(TLVERTEX) * 4, NULL,
-			D3DFVF_TLVERTEX, D3DPOOL_MANAGED, &vertexBuffer, NULL);
-		pDevice->SetStreamSource(0, vertexBuffer, 0, sizeof(TLVERTEX));
-
-		if (vertexBuffer != nullptr)
-		{
-			TLVERTEX* vertices;
-
-			//Lock the vertex buffer
-			vertexBuffer->Lock(0, 0, (void**)&vertices, NULL);
-
-			if (vertices != nullptr)
-			{
-				//Setup vertices
-				//A -0.5f modifier is applied to vertex coordinates to match texture
-				//and screen coords. Some drivers may compensate for this
-				//automatically, but on others texture alignment errors are introduced
-				//More information on this can be found in the Direct3D 9 documentation
-				vertices[0].color = vertexColour;
-				vertices[0].x = (float)rDest->left - 0.5f;
-				vertices[0].y = (float)rDest->top - 0.5f;
-				vertices[0].z = 0.0f;
-				vertices[0].rhw = 1.0f;
-				vertices[0].u = 0.0f;
-				vertices[0].v = 0.0f;
-
-				vertices[1].color = vertexColour;
-				vertices[1].x = (float)rDest->right - 0.5f;
-				vertices[1].y = (float)rDest->top - 0.5f;
-				vertices[1].z = 0.0f;
-				vertices[1].rhw = 1.0f;
-				vertices[1].u = 1.0f;
-				vertices[1].v = 0.0f;
-
-				vertices[2].color = vertexColour;
-				vertices[2].x = (float)rDest->right - 0.5f;
-				vertices[2].y = (float)rDest->bottom - 0.5f;
-				vertices[2].z = 0.0f;
-				vertices[2].rhw = 1.0f;
-				vertices[2].u = 1.0f;
-				vertices[2].v = 1.0f;
-
-				vertices[3].color = vertexColour;
-				vertices[3].x = (float)rDest->left - 0.5f;
-				vertices[3].y = (float)rDest->bottom - 0.5f;
-				vertices[3].z = 0.0f;
-				vertices[3].rhw = 1.0f;
-				vertices[3].u = 0.0f;
-				vertices[3].v = 1.0f;
-			}
-			//Unlock the vertex buffer
-			vertexBuffer->Unlock();
-		}
-		
-		//Set texture
-		if (texture != nullptr)
-		{
-			pDevice->SetTexture(0, texture);
-			pDevice->SetTextureStageState(0, D3DTSS_COLORARG1, D3DTA_TEXTURE);
-			pDevice->SetTextureStageState(0, D3DTSS_COLOROP, D3DTOP_SELECTARG1);
-		}
-
-		//Draw image
-		pDevice->DrawPrimitive(D3DPT_TRIANGLEFAN, 0, 2);
-	}
-}
-
-IDirect3DTexture9* CGalaxyVideoPlayerDlg::LoadTexture()
-{
-	if (pDevice != nullptr)
-	{
-		auto frames_iterator = frames.begin();
-
-		if (frames_iterator != frames.end())
-		{
-			auto current_frame = *frames_iterator;
-
-			frames.pop_front();
-
-			if (current_frame != nullptr)
-			{
-				if (current_frame->buf[0] != nullptr && current_frame->buf[1] != nullptr && current_frame->buf[2] != nullptr)
+				if (frames.size() != 0)
 				{
-					IDirect3DTexture9* texture;
+					auto iterator_1 = frames.begin();
 
-					auto result = pDevice->CreateTexture(current_frame->width, current_frame->height, 0, D3DUSAGE_DYNAMIC, D3DFMT_A8R8G8B8, D3DPOOL_DEFAULT, &texture, nullptr);
-
-					if (texture != nullptr)
+					auto current_frame = *iterator_1;
+					if (current_frame != nullptr)
 					{
-						D3DLOCKED_RECT locked_rectangle;
-						CRect rectangle(0, 0, current_frame->width, current_frame->height);
+/**
+* Hardware surfaces for Direct3D11.
+*
+* This is preferred over the legacy AV_PIX_FMT_D3D11VA_VLD. The new D3D11
+* hwaccel API and filtering support AV_PIX_FMT_D3D11 only.
+*
+* data[0] contains a ID3D11Texture2D pointer, and data[1] contains the
+* texture array index of the frame as intptr_t if the ID3D11Texture2D is
+* an array texture (or always 0 if it's a normal texture).
+*/
+//											AV_PIX_FMT_D3D11,
 
-						IDirect3DSurface9* surface = nullptr;
-
-						result = texture->GetSurfaceLevel(0, &surface);
-
-						if (surface != nullptr)
+						ID3D11Texture2D* pBackBuffer = (ID3D11Texture2D*)current_frame->buf[0];
+						if (pBackBuffer != nullptr)
 						{
-							result = surface->LockRect(&locked_rectangle, nullptr, D3DLOCK_DISCARD);
-
-							if (result == D3D_OK)
+							if (pSwapChain != nullptr)
 							{
-								// Stride depends on your texture format - this is the number of bytes per texel.
-								// Note that this may be less than 1 for DXT1 textures in which case you'll need 
-								// some bit swizzling logic. Can be inferred from Pitch and width.
-								int stride = 1;
-
-								int rowPitch = locked_rectangle.Pitch;
-								// Choose a pointer type that suits your stride.
-
-								DWORD* pixels = (DWORD*)locked_rectangle.pBits;
-								// Clear to black.
-
-								const uint8_t* U_data = &current_frame->buf[1]->data[0];
-								const uint8_t* V_data = &current_frame->buf[2]->data[0];
-
-								const uint8_t* U_pos = U_data;
-								const uint8_t* V_pos = V_data;
-
-								for (int y = 0; y < rectangle.Height(); y++)
+								if (
+									SUCCEEDED(
+										pSwapChain->GetBuffer(0, IID_PPV_ARGS(&pBackBuffer))
+									)
+									)
 								{
-									for (int x = 0; x < rectangle.Width(); x += 2)
-									{										
-										{
-											int Y = current_frame->buf[0]->data[x + current_frame->linesize[0] * y];
-											int U = *U_pos;
-											int V = *V_pos;
-
-											Y -= 16;
-											U -= 128;
-											V -= 128;
-
-											BYTE R = YUV_TO_R(Y, U, V) & 0xff;
-											BYTE G = YUV_TO_G(Y, U, V) & 0xff;
-											BYTE B = YUV_TO_B(Y, U, V) & 0xff;
-
-											DWORD pixel = RGB32(
-												R,
-												G,
-												B
-											);
-
-											pixels[x + rowPitch / sizeof(DWORD) * y] = pixel;
-										}
-
-										{
-											int Y = current_frame->buf[0]->data[x + 1 + current_frame->linesize[0] * y];
-											int U = *U_pos;
-											int V = *V_pos;
-
-											Y -= 16;
-											U -= 128;
-											V -= 128;
-
-											BYTE R = YUV_TO_R(Y, U, V) & 0xff;
-											BYTE G = YUV_TO_G(Y, U, V) & 0xff;
-											BYTE B = YUV_TO_B(Y, U, V) & 0xff;
-
-											DWORD pixel = RGB32(
-												R,
-												G,
-												B
-											);
-
-											pixels[x + 1 + rowPitch / sizeof(DWORD) * y] = pixel;
-										}
-
-										U_data += 1;
-										V_data += 1;
-									}
-
-									if (y & 0x1)
+									if (pDevice != nullptr)
 									{
-										U_pos = &current_frame->buf[1]->data[0 + current_frame->linesize[1] * y / 2];
-										V_pos = &current_frame->buf[2]->data[0 + current_frame->linesize[2] * y / 2];
+										if (
+											SUCCEEDED(
+												pDevice->CreateRenderTargetView(pBackBuffer, NULL, &pRenderTargetView)
+											)
+											)
+										{
+											pBackBuffer->Release();
+										}
 									}
-									else
-									{
-										U_data = U_pos;
-										V_data = V_pos;
-									}
-
 								}
-
-								surface->UnlockRect();
 							}
 						}
 					}
 
-					av_frame_free(&current_frame);
-					current_frame = nullptr;
-
-					return texture;
+					frames.pop_front();
 				}
-			}			
+
+				pSwapChain->Present(1, 0);
+			}
 		}
 	}
-
-	return nullptr;
 }
-
 
 void CGalaxyVideoPlayerDlg::OnTimer(UINT_PTR nIDEvent)
 {
@@ -693,7 +552,7 @@ void CGalaxyVideoPlayerDlg::OnTimer(UINT_PTR nIDEvent)
 
 				if (response < 0 && response != AVERROR_EOF)
 				{
-					av_log(NULL, AV_LOG_ERROR, "Failed to read frame.\n");
+					set_application_status(L"Failed to read frame.\n");
 				}
 				else
 				{
@@ -705,7 +564,7 @@ void CGalaxyVideoPlayerDlg::OnTimer(UINT_PTR nIDEvent)
 
 							if (response < 0)
 							{
-								av_log(NULL, AV_LOG_ERROR, "Failed to read frame.\n");
+								set_application_status(L"Failed to read frame.\n");
 							}
 							else
 							{
@@ -729,4 +588,10 @@ void CGalaxyVideoPlayerDlg::OnTimer(UINT_PTR nIDEvent)
 	}
 
 	CDialogEx::OnTimer(nIDEvent);
+}
+
+
+void CGalaxyVideoPlayerDlg::set_application_status(CString message)
+{
+	application_status.SetWindowTextW(message.GetBuffer());
 }
