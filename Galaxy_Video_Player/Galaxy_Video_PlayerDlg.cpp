@@ -187,9 +187,6 @@ BOOL CGalaxyVideoPlayerDlg::OnInitDialog()
 		}
 	}
 
-	ShowWindow(SW_SHOWNORMAL);
-	UpdateWindow();
-
 	// draw the initial gray window
 	pDeviceContext->ClearRenderTargetView(pRenderTargetView, color);
 	pSwapChain->Present(1, 0);
